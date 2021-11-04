@@ -1,0 +1,9 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: ControllerDeployment
+metadata:
+  name: provider-kind
+type: helm
+providerConfig:
+  values:
+    controllerManager:
+      replicas: 0

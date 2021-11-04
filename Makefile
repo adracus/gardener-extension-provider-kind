@@ -44,7 +44,7 @@ helm: manifests kustomize helmify ## Build helm chart from kustomization
 	$(KUSTOMIZE) build config/example | $(HELMIFY) charts/gardener-extension-provider-kind
 
 controller-registration: controller-registration-gen helm
-	$(CONTROLLER_REGISTRATION_GEN) provider-kind ./charts/gardener-extension-provider-kind <(echo 0.0.1) ./example/controller-registration.yaml ControlPlane:kind Infrastructure:kind Worker:kind
+	$(CONTROLLER_REGISTRATION_GEN) provider-kind ./charts/gardener-extension-provider-kind <(echo 0.0.1) ./example/base/controller-registration.yaml ControlPlane:kind Infrastructure:kind Worker:kind
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."

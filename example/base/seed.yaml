@@ -1,0 +1,28 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: Seed
+metadata:
+  name: my-seed
+spec:
+  provider:
+    type: kind
+    region: local
+  secretRef:
+   name: seed-secret
+   namespace: garden
+  dns:
+    ingressDomain: ingress.dev.my-seed.example.com
+  networks: # seed and shoot networks must be disjunct
+    nodes: 10.240.0.0/16
+    pods: 10.241.128.0/17
+    services: 10.241.0.0/17
+    blockCIDRs:
+    - 169.254.169.254/32
+  settings:
+    excessCapacityReservation:
+      enabled: true # this seed will deploy excess-capacity-reservation pods
+    scheduling:
+      visible: true # the gardener-scheduler will consider this seed for shoots
+    shootDNS:
+      enabled: false # all shoots on this seed will use DNS, if disabled they'll just use the plain IPs/hostnames
+    verticalPodAutoscaler:
+      enabled: true # a Gardener-managed VPA deployment is enabled
