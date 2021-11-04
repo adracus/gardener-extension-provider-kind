@@ -11,15 +11,18 @@ spec:
    namespace: garden
   dns:
     ingressDomain: ingress.dev.my-seed.example.com
-  networks: # seed and shoot networks must be disjunct
-    nodes: 10.240.0.0/16
-    pods: 10.241.128.0/17
-    services: 10.241.0.0/17
+  networks:
+    nodes: 172.19.0.0/16
+    pods: 10.1.0.0/16
+    services: 10.96.0.0/16
+    shootDefaults:
+      pods: 10.77.0.0/16
+      services: 10.78.0.0/16
     blockCIDRs:
     - 169.254.169.254/32
   settings:
     excessCapacityReservation:
-      enabled: true # this seed will deploy excess-capacity-reservation pods
+      enabled: false # this seed will deploy excess-capacity-reservation pods
     scheduling:
       visible: true # the gardener-scheduler will consider this seed for shoots
     shootDNS:
