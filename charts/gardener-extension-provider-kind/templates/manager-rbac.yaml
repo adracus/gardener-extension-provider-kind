@@ -1,0 +1,106 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gardener-extension-provider-kind.fullname" . }}-manager-role
+  labels:
+  {{- include "gardener-extension-provider-kind.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - controlplanes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - controlplanes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - infrastructures
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - infrastructures/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - workers
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - extensions.gardener.cloud
+  resources:
+  - workers/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gardener-extension-provider-kind.fullname" . }}-manager-rolebinding
+  labels:
+  {{- include "gardener-extension-provider-kind.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: '{{ include "gardener-extension-provider-kind.fullname" . }}-manager-role'
+subjects:
+- kind: ServiceAccount
+  name: '{{ include "gardener-extension-provider-kind.fullname" . }}-controller-manager'
+  namespace: '{{ .Release.Namespace }}'

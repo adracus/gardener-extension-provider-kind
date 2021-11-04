@@ -1,0 +1,6 @@
+domain: kind.provider.extensions.gardener.cloud
+layout:
+- go.kubebuilder.io/v3
+projectName: gardener-extension-provider-kind
+repo: github.com/gardener/gardener-extension-provider-kind
+version: "3"
