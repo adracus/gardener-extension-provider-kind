@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 
 	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 
@@ -109,6 +108,7 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 		return fmt.Errorf("error applying user data secret: %w", err)
 	}
 
+	workerName := fmt.Sprintf("%s-%s", worker.Name, pool.Name)
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -116,11 +116,15 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: worker.Namespace,
-			Name:      fmt.Sprintf("%s-%s", worker.Name, pool.Name),
+			Name:      workerName,
 		},
 		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"worker": workerName},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"worker": workerName},
 					Annotations: map[string]string{
 						"checksum/userdata": SHA256(pool.UserData),
 					},
@@ -168,6 +172,10 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 			Kind:       "HorizontalPodAutoscaler",
 			APIVersion: "autoscaling/v1",
 		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: worker.Namespace,
+			Name:      workerName,
+		},
 		Spec: autoscalingv1.HorizontalPodAutoscalerSpec{
 			ScaleTargetRef: autoscalingv1.CrossVersionObjectReference{
 				Kind:       deployment.Kind,
@@ -189,13 +197,6 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 }
 
 func (r *WorkerReconciler) reconcile(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker) (ctrl.Result, error) {
-	config := &kindv1alpha1.WorkerConfig{}
-	decoder := serializer.NewCodecFactory(r.Scheme).UniversalDeserializer()
-	if _, err := runtime.Decode(decoder, worker.Spec.ProviderConfig.Raw); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error decoding worker config: %w", err)
-	}
-	_ = config
-
 	for _, pool := range worker.Spec.Pools {
 		pool := pool
 		if err := r.applyPool(ctx, log, worker, &pool); err != nil {
