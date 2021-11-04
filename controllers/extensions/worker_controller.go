@@ -22,9 +22,10 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+
+	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/go-logr/logr"
@@ -39,11 +40,11 @@ type WorkerReconciler struct {
 	NodeImage string
 }
 
-//+kubebuilder:rbac:groups=extensions.gardener.cloud,resources=workers,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=extensions.gardener.cloud,resources=workers/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=extensions.gardener.cloud,resources=workers,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=extensions.gardener.cloud,resources=workers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;update;patch
 
 func (r *WorkerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -55,6 +56,11 @@ func (r *WorkerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if !worker.DeletionTimestamp.IsZero() {
 		return r.delete(ctx, log, worker)
 	}
+
+	if requeue, err := removeOperationAnnotation(ctx, r, worker); err != nil || requeue {
+		return ctrl.Result{Requeue: requeue}, err
+	}
+
 	return r.reconcile(ctx, log, worker)
 }
 
@@ -184,7 +190,7 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 
 func (r *WorkerReconciler) reconcile(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker) (ctrl.Result, error) {
 	config := &kindv1alpha1.WorkerConfig{}
-	decoder := serializer.NewCodecFactory(r.Scheme).UniversalDecoder()
+	decoder := serializer.NewCodecFactory(r.Scheme).UniversalDeserializer()
 	if _, err := runtime.Decode(decoder, worker.Spec.ProviderConfig.Raw); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error decoding worker config: %w", err)
 	}

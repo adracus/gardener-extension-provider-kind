@@ -13,11 +13,12 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -40,6 +41,11 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !ctrlPlane.DeletionTimestamp.IsZero() {
 		return r.delete(ctx, log, ctrlPlane)
 	}
+
+	if requeue, err := removeOperationAnnotation(ctx, r, ctrlPlane); err != nil || requeue {
+		return ctrl.Result{Requeue: requeue}, err
+	}
+
 	return r.reconcile(ctx, log, ctrlPlane)
 }
 

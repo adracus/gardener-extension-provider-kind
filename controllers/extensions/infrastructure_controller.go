@@ -13,9 +13,10 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+
+	kindv1alpha1 "github.com/gardener/gardener-extension-provider-kind/apis/kind/v1alpha1"
 
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/go-logr/logr"
@@ -29,8 +30,8 @@ type InfrastructureReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=extensions.gardener.cloud,resources=infrastructures,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=extensions.gardener.cloud,resources=infrastructures/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=extensions.gardener.cloud,resources=infrastructures,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=extensions.gardener.cloud,resources=infrastructures/status,verbs=get;update;patch
 
 func (r *InfrastructureReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -42,6 +43,11 @@ func (r *InfrastructureReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !infra.DeletionTimestamp.IsZero() {
 		return r.delete(ctx, log, infra)
 	}
+
+	if requeue, err := removeOperationAnnotation(ctx, r, infra); err != nil || requeue {
+		return ctrl.Result{Requeue: requeue}, err
+	}
+
 	return r.reconcile(ctx, log, infra)
 }
 
@@ -68,7 +74,7 @@ func (r *InfrastructureReconciler) delete(ctx context.Context, log logr.Logger, 
 
 func (r *InfrastructureReconciler) reconcile(ctx context.Context, log logr.Logger, infra *extensionsv1alpha1.Infrastructure) (ctrl.Result, error) {
 	config := &kindv1alpha1.InfrastructureConfig{}
-	decoder := serializer.NewCodecFactory(r.Scheme).UniversalDecoder()
+	decoder := serializer.NewCodecFactory(r.Scheme).UniversalDeserializer()
 	if _, err := runtime.Decode(decoder, infra.Spec.ProviderConfig.Raw); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error decoding infrastructure config: %w", err)
 	}
