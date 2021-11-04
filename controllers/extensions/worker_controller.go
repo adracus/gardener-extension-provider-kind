@@ -109,6 +109,7 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 	}
 
 	workerName := fmt.Sprintf("%s-%s", worker.Name, pool.Name)
+	fileOrCreate := corev1.HostPathFileOrCreate
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -132,8 +133,9 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "node",
-							Image: r.NodeImage,
+							Name:            "node",
+							Image:           r.NodeImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: pointer.Bool(true),
 							},
@@ -141,6 +143,24 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 								{
 									Name:      "userdata",
 									MountPath: "/etc/gardener-worker",
+								},
+								{
+									Name:      "var",
+									MountPath: "/var",
+								},
+								{
+									Name:      "kind",
+									MountPath: "/kind",
+								},
+								{
+									Name:      "modules",
+									MountPath: "/lib/modules",
+									ReadOnly:  true,
+								},
+								{
+									Name:      "xtables-lock",
+									MountPath: "/run/xtables.lock",
+									ReadOnly:  true,
 								},
 							},
 						},
@@ -152,6 +172,35 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 								Secret: &corev1.SecretVolumeSource{
 									SecretName:  userDataSecret.Name,
 									DefaultMode: pointer.Int32(0777),
+								},
+							},
+						},
+						{
+							Name: "var",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "kind",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "modules",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/lib/modules",
+								},
+							},
+						},
+						{
+							Name: "xtables-lock",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/run/xtables.lock",
+									Type: &fileOrCreate,
 								},
 							},
 						},

@@ -397,6 +397,10 @@ enable_network_magic(){
   fi
 }
 
+# usually created during `kind build-image`, we need to create it here
+echo "creating /kind"
+mkdir -p /kind
+
 # validate state
 validate_userns
 
