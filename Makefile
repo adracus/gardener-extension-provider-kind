@@ -41,7 +41,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 helm: manifests kustomize helmify ## Build helm chart from kustomization
-	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/gardener-extension-provider-kind
+	$(KUSTOMIZE) build config/example | $(HELMIFY) charts/gardener-extension-provider-kind
 
 controller-registration: controller-registration-gen helm
 	$(CONTROLLER_REGISTRATION_GEN) provider-kind ./charts/gardener-extension-provider-kind <(echo 0.0.1) ./example/controller-registration.yaml ControlPlane:kind Infrastructure:kind Worker:kind

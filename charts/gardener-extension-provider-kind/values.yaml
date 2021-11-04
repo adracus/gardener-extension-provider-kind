@@ -5,7 +5,7 @@ controllerManager:
       tag: v0.8.0
   manager:
     image:
-      repository: controller
+      repository: github.com/adracus/gardener-extension-provider-kind/controller
       tag: latest
     resources:
       limits:
