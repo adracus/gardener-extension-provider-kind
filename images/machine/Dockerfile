@@ -25,6 +25,11 @@ FROM $BASE_IMAGE as build
 # `docker buildx` automatically sets this arg value
 ARG TARGETARCH
 
+# Fixes for buildx issue: https://github.com/docker/buildx/issues/495
+RUN ln -s /usr/bin/dpkg-split /usr/sbin/dpkg-split
+RUN ln -s /usr/bin/dpkg-deb /usr/sbin/dpkg-deb
+RUN ln -s /bin/tar /usr/sbin/tar
+
 # Configure containerd and runc binaries from kind-ci/containerd-nightlies repository
 # The repository contains latest stable releases and nightlies built for multiple architectures
 ARG CONTAINERD_VERSION="1.5.7"
