@@ -8,3 +8,11 @@ providerConfig:
     fullnameOverride: provider-kind
     controllerManager:
       replicas: 0
+---
+apiVersion: core.gardener.cloud/v1beta1
+kind: ControllerRegistration
+metadata:
+  name: provider-kind
+spec:
+  deployment:
+    policy: Always
