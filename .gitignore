@@ -23,3 +23,5 @@ testbin/*
 *.swp
 *.swo
 *~
+
+!images/machine/files/usr/local/bin
