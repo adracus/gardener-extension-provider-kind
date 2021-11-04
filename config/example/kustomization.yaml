@@ -6,7 +6,7 @@ resources:
 
 images:
   - name: controller
-    newName: github.com/adracus/gardener-extension-provider-kind/controller
+    newName: ghcr.io/adracus/gardener-extension-provider-kind/controller
     newTag: latest
 
 patchesStrategicMerge:
