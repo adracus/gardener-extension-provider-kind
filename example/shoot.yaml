@@ -21,8 +21,15 @@ spec:
       maximum: 1
       maxSurge: 1
       maxUnavailable: 0
+      kubernetes:
+        kubelet:
+          failSwapOn: false
       machine:
         type: kind-node
+        image:
+          name: gardenlinux
+      cri:
+        name: containerd
       volume:
         type: standard
         size: 20Gi

@@ -14,6 +14,12 @@ spec:
       cri:
       - name: containerd
       version: 318.9.0
+  - name: ubuntu
+    versions:
+    - classification: supported
+      cri:
+      - name: containerd
+      version: 0.1.0
   machineTypes:
   - cpu: "1"
     gpu: "0"

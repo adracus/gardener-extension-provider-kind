@@ -3,8 +3,15 @@ package extensions
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	gardenerpredicate "github.com/gardener/gardener/extensions/pkg/predicate"
+	"github.com/gardener/gardener/extensions/pkg/util"
+	"github.com/gardener/gardener/pkg/utils/kubernetes/bootstraptoken"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/cluster-bootstrap/token/api"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 
@@ -87,7 +94,7 @@ func (r *WorkerReconciler) delete(ctx context.Context, log logr.Logger, worker *
 	return ctrl.Result{}, nil
 }
 
-func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker, pool *extensionsv1alpha1.WorkerPool) error {
+func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker, pool *extensionsv1alpha1.WorkerPool, bootstrapToken string) error {
 	userDataSecret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
@@ -98,7 +105,7 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 			Name:      fmt.Sprintf("%s-%s-userdata", worker.Name, pool.Name),
 		},
 		Data: map[string][]byte{
-			"userdata": pool.UserData,
+			"userdata": []byte(strings.Replace(string(pool.UserData), "<<BOOTSTRAP_TOKEN>>", bootstrapToken, -1)),
 		},
 	}
 	if err := ctrl.SetControllerReference(worker, userDataSecret, r.Scheme); err != nil {
@@ -109,7 +116,6 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 	}
 
 	workerName := fmt.Sprintf("%s-%s", worker.Name, pool.Name)
-	fileOrCreate := corev1.HostPathFileOrCreate
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -125,7 +131,16 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"worker": workerName},
+					Labels: map[string]string{
+						"worker": workerName,
+						"networking.gardener.cloud/from-prometheus":     "allowed",
+						"networking.gardener.cloud/to-dns":              "allowed",
+						"networking.gardener.cloud/to-private-networks": "allowed",
+						"networking.gardener.cloud/to-public-networks":  "allowed",
+						"networking.gardener.cloud/to-shoot-networks":   "allowed",
+						"networking.gardener.cloud/to-shoot-apiserver":  "allowed",
+						"networking.gardener.cloud/from-apiserver":      "allowed",
+					},
 					Annotations: map[string]string{
 						"checksum/userdata": SHA256(pool.UserData),
 					},
@@ -139,30 +154,45 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: pointer.Bool(true),
 							},
+							Env: []corev1.EnvVar{{
+								Name: "NODE_NAME",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.name",
+									},
+								},
+							}},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "userdata",
 									MountPath: "/etc/gardener-worker",
 								},
 								{
-									Name:      "var",
-									MountPath: "/var",
-								},
-								{
-									Name:      "kind",
-									MountPath: "/kind",
+									Name:      "containerd",
+									MountPath: "/var/lib/containerd",
 								},
 								{
 									Name:      "modules",
 									MountPath: "/lib/modules",
 									ReadOnly:  true,
 								},
-								{
-									Name:      "xtables-lock",
-									MountPath: "/run/xtables.lock",
-									ReadOnly:  true,
+								// {
+								// 	Name:      "xtables-lock",
+								// 	MountPath: "/run/xtables.lock",
+								// 	ReadOnly:  false,
+								// },
+							},
+							Lifecycle: &corev1.Lifecycle{
+								PreStop: &corev1.Handler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"sh", "-c", "/opt/bin/kubectl --kubeconfig /var/lib/kubelet/kubeconfig-real delete node $NODE_NAME || true"},
+									},
 								},
 							},
+							Ports: []corev1.ContainerPort{{
+								ContainerPort: 30123,
+								Name:          "vpn",
+							}},
 						},
 					},
 					Volumes: []corev1.Volume{
@@ -176,13 +206,7 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 							},
 						},
 						{
-							Name: "var",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-						{
-							Name: "kind",
+							Name: "containerd",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
@@ -195,15 +219,14 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 								},
 							},
 						},
-						{
-							Name: "xtables-lock",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/run/xtables.lock",
-									Type: &fileOrCreate,
-								},
-							},
-						},
+						// {
+						// 	Name: "xtables-lock",
+						// 	VolumeSource: corev1.VolumeSource{
+						// 		HostPath: &corev1.HostPathVolumeSource{
+						// 			Path: "/run/xtables.lock",
+						// 		},
+						// 	},
+						// },
 					},
 				},
 			},
@@ -242,13 +265,38 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 		return fmt.Errorf("error applying horizontal pod autoscaler: %w", err)
 	}
 
-	return nil
+	service := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Service",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: worker.Namespace,
+			Name:      "vpn-shoot",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{"worker": workerName},
+			Ports: []corev1.ServicePort{{
+				Name:       "vpn",
+				Port:       4314,
+				TargetPort: intstr.FromInt(30123),
+			}},
+		},
+	}
+
+	return r.Patch(ctx, service, client.Apply, fieldOwner, client.ForceOwnership)
 }
 
 func (r *WorkerReconciler) reconcile(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker) (ctrl.Result, error) {
+	bootstrapToken, err := r.createBootstrapToken(ctx, worker)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	for _, pool := range worker.Spec.Pools {
 		pool := pool
-		if err := r.applyPool(ctx, log, worker, &pool); err != nil {
+		if err := r.applyPool(ctx, log, worker, &pool, bootstrapToken); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error applying pool: %w", err)
 		}
 	}
@@ -266,4 +314,65 @@ func (r *WorkerReconciler) reconcile(ctx context.Context, log logr.Logger, worke
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *WorkerReconciler) createBootstrapToken(ctx context.Context, worker *extensionsv1alpha1.Worker) (string, error) {
+	_, shootClient, err := util.NewClientForShoot(ctx, r.Client, worker.Namespace, client.Options{Scheme: r.Scheme})
+	if err != nil {
+		return "", err
+	}
+
+	if err := r.applyNodeSelfDeleterRBAC(ctx, shootClient); err != nil {
+		return "", err
+	}
+
+	tokenSecret, err := bootstraptoken.ComputeBootstrapToken(ctx, shootClient, "abcdef", "kind", 6*time.Hour)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s.%s", tokenSecret.Data[api.BootstrapTokenIDKey], tokenSecret.Data[api.BootstrapTokenSecretKey]), nil
+}
+
+func (r *WorkerReconciler) applyNodeSelfDeleterRBAC(ctx context.Context, shootClient client.Client) error {
+	clusterRole := &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+			Kind:       "ClusterRole",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:node-self-deleter",
+		},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs:     []string{"delete"},
+		}},
+	}
+
+	if err := shootClient.Patch(ctx, clusterRole, client.Apply, fieldOwner, client.ForceOwnership); err != nil {
+		return err
+	}
+
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
+			Kind:       "ClusterRoleBinding",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:node-self-deleter",
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     clusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "Group",
+			Name:     "system:nodes",
+		}},
+	}
+
+	return shootClient.Patch(ctx, clusterRoleBinding, client.Apply, fieldOwner, client.ForceOwnership)
 }

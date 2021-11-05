@@ -18,6 +18,7 @@ resources:
   - project.yaml
   - secret-internal-domain.yaml
   - cloudprofile.yaml
+  - https://raw.githubusercontent.com/gardener/gardener-extension-os-ubuntu/v1.13.0/example/controller-registration.yaml
   - https://raw.githubusercontent.com/gardener/gardener-extension-os-gardenlinux/v0.10.0/example/controller-registration.yaml
   - https://raw.githubusercontent.com/gardener/gardener-extension-networking-calico/v1.20.1/example/controller-registration.yaml
   - controller-registration.yaml
