@@ -6,3 +6,5 @@ resources:
 
 patchesStrategicMerge:
   - patch-controller-deployment.yaml
+  - patch-controller-registration-calico.yaml
+  - patch-controller-registration-gardenlinux.yaml

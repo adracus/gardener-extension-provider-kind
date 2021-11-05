@@ -9,6 +9,7 @@ import (
 	gardenerpredicate "github.com/gardener/gardener/extensions/pkg/predicate"
 	"github.com/gardener/gardener/extensions/pkg/util"
 	"github.com/gardener/gardener/pkg/utils/kubernetes/bootstraptoken"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/cluster-bootstrap/token/api"
@@ -133,16 +134,18 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						"worker": workerName,
-						"networking.gardener.cloud/from-prometheus":     "allowed",
-						"networking.gardener.cloud/to-dns":              "allowed",
-						"networking.gardener.cloud/to-private-networks": "allowed",
-						"networking.gardener.cloud/to-public-networks":  "allowed",
-						"networking.gardener.cloud/to-shoot-networks":   "allowed",
-						"networking.gardener.cloud/to-shoot-apiserver":  "allowed",
-						"networking.gardener.cloud/from-apiserver":      "allowed",
+						"networking.gardener.cloud/from-prometheus":      "allowed",
+						"networking.gardener.cloud/to-dns":               "allowed",
+						"networking.gardener.cloud/to-private-networks":  "allowed",
+						"networking.gardener.cloud/to-public-networks":   "allowed",
+						"networking.gardener.cloud/to-shoot-networks":    "allowed",
+						"networking.gardener.cloud/to-shoot-apiserver":   "allowed",
+						"networking.gardener.cloud/from-shoot-apiserver": "allowed",
 					},
 					Annotations: map[string]string{
 						"checksum/userdata": SHA256(pool.UserData),
+						"cluster-name":      worker.Name,
+						"pool-name":         pool.Name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -181,6 +184,13 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 								// 	MountPath: "/run/xtables.lock",
 								// 	ReadOnly:  false,
 								// },
+							},
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"sh", "-c", "/opt/bin/kubectl --kubeconfig /var/lib/kubelet/kubeconfig-real get no $NODE_NAME"},
+									},
+								},
 							},
 							Lifecycle: &corev1.Lifecycle{
 								PreStop: &corev1.Handler{
@@ -285,7 +295,38 @@ func (r *WorkerReconciler) applyPool(ctx context.Context, log logr.Logger, worke
 		},
 	}
 
-	return r.Patch(ctx, service, client.Apply, fieldOwner, client.ForceOwnership)
+	if err := r.Patch(ctx, service, client.Apply, fieldOwner, client.ForceOwnership); err != nil {
+		return err
+	}
+
+	networkPolicy := &networkingv1.NetworkPolicy{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: networkingv1.SchemeGroupVersion.String(),
+			Kind:       "NetworkPolicy",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: worker.Namespace,
+			Name:      "allow-to-worker-nodes",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			Egress: []networkingv1.NetworkPolicyEgressRule{{
+				To: []networkingv1.NetworkPolicyPeer{{
+					PodSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{{
+							Key:      "worker",
+							Operator: metav1.LabelSelectorOpExists,
+						}},
+					},
+				}},
+			}},
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"networking.gardener.cloud/to-shoot-networks": "allowed"},
+			},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+		},
+	}
+
+	return r.Patch(ctx, networkPolicy, client.Apply, fieldOwner, client.ForceOwnership)
 }
 
 func (r *WorkerReconciler) reconcile(ctx context.Context, log logr.Logger, worker *extensionsv1alpha1.Worker) (ctrl.Result, error) {

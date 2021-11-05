@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"net"
 	"os"
 
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
@@ -35,12 +36,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	//+kubebuilder:scaffold:imports
+	// +kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	hostIP string
 )
 
 func init() {
@@ -48,7 +50,19 @@ func init() {
 	utilruntime.Must(kindv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(extensionsv1alpha1.AddToScheme(scheme))
 
-	//+kubebuilder:scaffold:scheme
+	// +kubebuilder:scaffold:scheme
+
+	name, err := os.Hostname()
+	utilruntime.Must(err)
+	addrs, err := net.LookupHost(name)
+	utilruntime.Must(err)
+
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil && !ip.IsLoopback(){
+			hostIP = ip.String()
+			break
+		}
+	}
 }
 
 func main() {
@@ -62,6 +76,8 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&nodeImage, "node-image", "node:latest", "Image to use for kind nodes.")
+	flag.StringVar(&hostIP, "host-ip", hostIP, "Overwrite Host IP to use for kube-apiserver service LoadBalancer")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -69,6 +85,8 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	ctrl.Log.Info("using host-ip", "host-ip", hostIP)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -102,10 +120,25 @@ func main() {
 		Scheme:    mgr.GetScheme(),
 		NodeImage: nodeImage,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to set up controller", "controller", "infrastructure")
+		setupLog.Error(err, "unable to set up controller", "controller", "worker")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	if err := (&extensions.NodeReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "node")
+		os.Exit(1)
+	}
+	if err := (&extensions.ServiceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		HostIP: hostIP,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "node")
+		os.Exit(1)
+	}
+	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
